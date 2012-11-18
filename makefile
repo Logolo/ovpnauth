@@ -1,5 +1,5 @@
 CC = gcc
-FLAGS = -std=c99 -lcrypto -lc -lz -ldl
+FLAGS = -Wall -std=c99 -lcrypto -lc -lz -ldl
 SOURCES = ovpnauth.c
 TARGET = ovpnauth
 

@@ -36,7 +36,7 @@ char *DATABASE_TEMP;
  *  @retval 0       Returned upon successful execution
  *  @retval 1       Returned when OpenSSL methods cannot be initialized
  */
-int sha512(char *string, unsigned char output[DIGEST_LENGTH * 2 + 1])
+int sha512(char *string, char output[DIGEST_LENGTH * 2 + 1])
 {
     unsigned char hash[SHA512_DIGEST_LENGTH] = "\0";
     SHA512_CTX sha;
@@ -72,11 +72,11 @@ int sha512(char *string, unsigned char output[DIGEST_LENGTH * 2 + 1])
 int saltedhash(char *string, char *salt, char output[SALTED_HASH_LENGTH + 1])
 {
     FILE *urandom;
+    char *salted_string;
+    char hash[DIGEST_LENGTH * 2 + 1];
+    char salt_[MAX_SALT_LENGTH + 1];
     size_t salt_length;
     size_t string_length = strlen(string);
-    unsigned char *salted_string;
-    unsigned char hash[DIGEST_LENGTH * 2 + 1];
-    unsigned char salt_[MAX_SALT_LENGTH + 1];
 
     if (salt == NULL) {
         // When no salt is given, grab data from /dev/urandom, convert it to
@@ -193,8 +193,8 @@ void usage(char *argv0)
  */
 char *openvpn_sanitize(char *string, int is_username)
 {
-    char *ptr = string;
-    while (*ptr != '\0') {
+    char *ptr = string - 1;
+    while (*++ptr) {
         if (!is_username) {
             if (*ptr == '\r' || *ptr == '\n' || *ptr < ' ' || *ptr > '~') {
                 *ptr = '_';
@@ -204,8 +204,6 @@ char *openvpn_sanitize(char *string, int is_username)
           *ptr == '-')) {
             *ptr = '_';
         }
-
-        *ptr++;
     }
 
     return string;
@@ -220,9 +218,9 @@ int main(int argc, char **argv)
     char *hash;
     char *salt;
     char *username;
+    char hash_with_salt[SALTED_HASH_LENGTH + 1];
     char line[MAX_LINE_SIZE];
     int action = ACTION_NOOP;
-    unsigned char hash_with_salt[SALTED_HASH_LENGTH + 1];
 
     // Get path to database from OVPNAUTH_DATABASE. If the path cannot be
     // pulled from the environment, the database path defaults to "users.db".
