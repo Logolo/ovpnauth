@@ -31,8 +31,11 @@ the following commands:
 Once the development headers, compiler and `make` are installed, you should be
 able to compile the application by running `make`. By default, a statically
 linked executable is built, but a dynamic executable can be built with `make
-dynamic`, and the test suite can be run with `make tests`. The test suite was
-written for GNU/Linux, and is unlikely to be very portable.
+dynamic`. The test suite script was written for GNU/Linux and has only been
+tested on two distributions, so it is unlikely to be very portable. You can
+skip the tests and just compile the binary with `make ovpnauth`. Tests can be
+run at any time with `make tests` or by executing the `tests.sh` script with
+bash.
 
 Installation
 ------------

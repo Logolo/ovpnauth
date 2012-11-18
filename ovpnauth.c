@@ -15,6 +15,7 @@
 #define ACTION_LIST 4
 #define ACTION_NOOP 0
 #define ACTION_REMOVE 2
+#define ACTION_LOCKS_DATABASE (ACTION_EDIT | ACTION_REMOVE)
 #define ERRNO_DIE(msg) perror(msg); exit(1);
 #define DIGEST_LENGTH SHA512_DIGEST_LENGTH
 #define MAX_LINE_SIZE 4096
@@ -90,6 +91,7 @@ int saltedhash(char *string, char *salt, char output[SALTED_HASH_LENGTH + 1])
         }
         salt_[MAX_SALT_LENGTH] = '\0';
         salt_length = MAX_SALT_LENGTH;
+        fclose(urandom);
     } else {
         strncpy(salt_, salt, MAX_SALT_LENGTH);
         salt_length = strlen(salt_);
@@ -116,6 +118,35 @@ int saltedhash(char *string, char *salt, char output[SALTED_HASH_LENGTH + 1])
 
     free(salted_string);
     return 0;
+}
+
+/* Creates a file and returns a FILE pointer. If the file already exists,
+ * the function will wait briefly before attempting to create the file
+ * again.
+ *
+ * @param path      Path to lock
+ * @param mode      Access mode passed to fdopen
+ * @param attempts  Maximum number of attempts to acquire access to path
+ *
+ * @returns         Returns a file pointer once the file is created. If
+ *                  function fails, a NULL pointer is returned and errno
+ *                  set accordingly.
+ */
+FILE *excl_open(char *path, char *mode, int attempts)
+{
+    int lockfd;
+    unsigned long int delay = 125000;
+    while (1) {
+        lockfd = open(DATABASE_TEMP, O_CREAT | O_EXCL | O_WRONLY, 0600);
+        if (lockfd > -1) {
+            return fdopen(lockfd, mode);
+        }
+        if (!attempts--) {
+            break;
+        }
+        usleep(delay);
+    }
+    return NULL;
 }
 
 /* Cleanup function used by `atexit` to remove temporary files.
@@ -184,7 +215,6 @@ int main(int argc, char **argv)
 {
     FILE *userdb;
     FILE *userdbtmp;
-    FILE *lockfile;
     char *envpassword;
     char *envusername;
     char *hash;
@@ -199,7 +229,6 @@ int main(int argc, char **argv)
     // The temporary database path is created prepending a "." and appending
     // ".tmp" to the database path's basename, so the temporary file for
     // "/etc/ovpn.shadow" would be "/etc/.ovpn.shadow.tmp".
-    char *slash_ptr;
     DATABASE_PATH = getenv("OVPNAUTH_DATABASE");
     if (DATABASE_PATH == NULL) {
         DATABASE_PATH = "users.db";
@@ -210,24 +239,20 @@ int main(int argc, char **argv)
             ERRNO_DIE("Could not allocate memory");
         }
 
-        slash_ptr = strrchr(DATABASE_PATH, '/');
+        char *slash_ptr = strrchr(DATABASE_PATH, '/');
         if (slash_ptr == NULL) {
             DATABASE_TEMP[0] = '.';
             DATABASE_TEMP[1] = '\0';
             strcat(DATABASE_TEMP, DATABASE_PATH);
-            strcat(DATABASE_TEMP, ".tmp");
         } else {
+            // Insert "." immediately after the slash.
             strncpy(DATABASE_TEMP, DATABASE_PATH, slash_ptr - DATABASE_PATH + 1);
             *(DATABASE_TEMP + (slash_ptr - DATABASE_PATH + 1)) = '.';
             *(DATABASE_TEMP + (slash_ptr - DATABASE_PATH + 2)) = '\0';
             strcat(DATABASE_TEMP, slash_ptr + 1);
-            strcat(DATABASE_TEMP, ".tmp");
         }
+        strcat(DATABASE_TEMP, ".tmp");
     }
-
-    signal(SIGTERM, sig_cleanup);
-    signal(SIGINT, sig_cleanup);
-    atexit(cleanup);
 
     userdb = fopen(DATABASE_PATH, "a+");
     if (userdb == NULL) {
@@ -264,9 +289,9 @@ int main(int argc, char **argv)
         return 1;
     }
 
-    if (action & (ACTION_EDIT | ACTION_REMOVE)) {
-        int attempts;
+    if (action & ACTION_LOCKS_DATABASE) {
         char *envattempts = getenv("OVPNAUTH_LOCK_ATTEMPTS");
+        int attempts = 0;
         if (envattempts != NULL) {
             attempts = atoi(envattempts);
         }
@@ -275,26 +300,23 @@ int main(int argc, char **argv)
             attempts = 12;
         }
 
-        unsigned long int delay = 125000;
-        int lockfd;
-        while (1) {
-            lockfd = open(DATABASE_TEMP, O_CREAT | O_EXCL | O_WRONLY, 0600);
-            if (lockfd > -1) {
-                break;
-            } else if (!attempts--) {
-                perror("Lock timeout exceeded.");
-                return 1;
-            }
-            usleep(delay);
+        if ((userdbtmp = excl_open(DATABASE_TEMP, "w", attempts)) == NULL) {
+            ERRNO_DIE("Unable to lock database");
         }
-        userdbtmp = fdopen(lockfd, "w");
 
+        // Make sure the lock file is removed when the process terminates
+        signal(SIGTERM, sig_cleanup);
+        signal(SIGINT, sig_cleanup);
+        atexit(cleanup);
+    }
+
+    if (action & (ACTION_EDIT | ACTION_REMOVE)) {
         char read_buffer[128];
         if (argc > 2) {
             envusername = argv[2];
         } else {
             printf("Username: ");
-            scanf("%128s", read_buffer);
+            scanf("%127s", read_buffer);
             envusername = (char *) malloc(strlen(read_buffer) + 1);
             if (envusername == NULL) {
                 ERRNO_DIE("Could not allocate memory");
@@ -306,7 +328,7 @@ int main(int argc, char **argv)
             if (isatty(0) && isatty(1)) {
                 printf("Password: ");
             }
-            scanf("%128s", read_buffer);
+            scanf("%127s", read_buffer);
             envpassword = (char *) malloc(strlen(read_buffer) + 1);
             if (envpassword == NULL) {
                 ERRNO_DIE("Could not allocate memory");
@@ -324,8 +346,8 @@ int main(int argc, char **argv)
         openvpn_sanitize(envpassword, 0);
     }
 
-    int user_found = 0;
     char strtok_buffer[MAX_LINE_SIZE];
+    int user_found = 0;
     while(fgets(line, MAX_LINE_SIZE, userdb) != NULL) {
         // Line must remain in tact, so create a copy for strtok to munch on.
         strcpy(strtok_buffer, line);
@@ -396,7 +418,6 @@ int main(int argc, char **argv)
             printf("Created new user '%s'.\n", envusername);
         } else {
             printf("Could not find user '%s'.\n", envusername);
-            unlink(DATABASE_TEMP);
             return 1;
         }
     } else {
@@ -411,8 +432,7 @@ int main(int argc, char **argv)
 
     // Atomically replace the existing database with the new database.
     if (rename(DATABASE_TEMP, DATABASE_PATH)) {
-        perror("Could not save changes");
-        return 1;
+        ERRNO_DIE("Could not save changes");
     }
 
     return 0;
