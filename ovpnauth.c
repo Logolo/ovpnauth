@@ -1,13 +1,15 @@
 #define _POSIX_C_SOURCE 200112L
 #define _BSD_SOURCE
 
+#include <sys/stat.h>
 #include <errno.h>
+#include <limits.h>
 #include <openssl/sha.h>
-#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/file.h>
+#include <time.h>
 #include <unistd.h>
 
 #define ACTION_AUTHENTICATE 8
@@ -16,16 +18,16 @@
 #define ACTION_NOOP 0
 #define ACTION_REMOVE 2
 #define ACTION_LOCKS_DATABASE (ACTION_EDIT | ACTION_REMOVE)
-#define ERRNO_DIE(msg) perror(msg); exit(1);
 #define DIGEST_LENGTH SHA512_DIGEST_LENGTH
+#define ERRNO_DIE(msg) perror(msg); exit(1);
+#define MAX_INPUT_CHARS 127
 #define MAX_LINE_SIZE 4096
-#define MAX_SALT_LENGTH 32
-#define SALTED_HASH_LENGTH (DIGEST_LENGTH * 2 + MAX_SALT_LENGTH + 1)
+#define MAX_SALT_CHARS 32
+#define QW(str) #str
+#define READ_INTO(destination, chars) scanf("%" QW(chars) "s", destination);
+#define SALTED_HASH_LENGTH (DIGEST_LENGTH * 2 + MAX_SALT_CHARS + 1)
 
-void dlopen() { /* eliminates a compiler warning RHEL-based systems. */ };
-
-char *DATABASE_PATH;
-char *DATABASE_TEMP;
+void dlopen() { /* eliminates a compiler warning on RHEL-based systems. */ };
 
 /*  Compute hexadecimal SHA digest of given string.
  *
@@ -56,7 +58,7 @@ int sha512(char *string, char output[DIGEST_LENGTH * 2 + 1])
 /*  Concatenate a string with a given salt and generate an SHA digest of
  *  the concatenated string. If a NULL pointer is passed in for the salt, a
  *  random salt will be generated. If a salt is provided and exceed
- *  MAX_SALT_LENGTH, it will be truncated.
+ *  MAX_SALT_CHARS, it will be truncated.
  *
  *  @param string   String from which to generate salted hash
  *  @param salt     Salt used for hash generation. Passing this argument in
@@ -65,7 +67,7 @@ int sha512(char *string, char output[DIGEST_LENGTH * 2 + 1])
  *  @param output   Output buffer for digest. This will contain the hash
  *                  and salt used for the hash joined with a ':'. The
  *                  buffer must be of size (DIGEST_LENGTH * 2 +
- *                  MAX_SALT_LENGTH + 1)
+ *                  MAX_SALT_CHARS + 1)
  *
  *  @returns        Returns the result of the `sha512` function
  */
@@ -74,10 +76,11 @@ int saltedhash(char *string, char *salt, char output[SALTED_HASH_LENGTH + 1])
     FILE *urandom;
     char *salted_string;
     char hash[DIGEST_LENGTH * 2 + 1];
-    char salt_[MAX_SALT_LENGTH + 1];
+    char salt_[MAX_SALT_CHARS + 1] = "\0";
     size_t salt_length;
     size_t string_length = strlen(string);
 
+    salt_[MAX_SALT_CHARS] = '\0';
     if (salt == NULL) {
         // When no salt is given, grab data from /dev/urandom, convert it to
         // hexadecimal and use the result as our salt.
@@ -86,14 +89,13 @@ int saltedhash(char *string, char *salt, char output[SALTED_HASH_LENGTH + 1])
             ERRNO_DIE("Could not open /dev/urandom");
         }
 
-        for(int i = 0; i < MAX_SALT_LENGTH / 2; ++i) {
+        for(int i = 0; i < MAX_SALT_CHARS / 2; ++i) {
             sprintf(salt_ + i * 2, "%02x", fgetc(urandom));
         }
-        salt_[MAX_SALT_LENGTH] = '\0';
-        salt_length = MAX_SALT_LENGTH;
+        salt_length = MAX_SALT_CHARS;
         fclose(urandom);
     } else {
-        strncpy(salt_, salt, MAX_SALT_LENGTH);
+        strncpy(salt_, salt, MAX_SALT_CHARS);
         salt_length = strlen(salt_);
     }
 
@@ -124,45 +126,47 @@ int saltedhash(char *string, char *salt, char output[SALTED_HASH_LENGTH + 1])
  * the function will wait briefly before attempting to create the file
  * again.
  *
- * @param path      Path to lock
- * @param mode      Access mode passed to fdopen
- * @param attempts  Maximum number of attempts to acquire access to path
+ * @param path          Path to lock
+ * @param mode          Access mode passed to fdopen
+ * @param timeout_sec   Maximum amount of time to spend attempting to open
+ *                      file
  *
- * @returns         Returns a file pointer once the file is created. If
- *                  function fails, a NULL pointer is returned and errno
- *                  set accordingly.
+ * @returns             Returns a file pointer once the file is created. If
+ *                      function fails, a NULL pointer is returned and
+ *                      errno set accordingly.
  */
-FILE *excl_open(char *path, char *mode, int attempts)
+FILE *excl_open(char *path, char *mode, int timeout_sec)
 {
     int lockfd;
+    struct timespec clock_now;
+    struct timespec clock_start;
+    struct stat file_info;
     unsigned long int delay = 125000;
+
+    clock_gettime(CLOCK_MONOTONIC, &clock_start);
     while (1) {
-        lockfd = open(DATABASE_TEMP, O_CREAT | O_EXCL | O_WRONLY, 0600);
+        lockfd = open(path, O_CREAT | O_EXCL | O_WRONLY, 0600);
         if (lockfd > -1) {
             return fdopen(lockfd, mode);
+        } else if (errno == EEXIST) {
+            // Attempt to remove old, stale files.
+            if (!stat(path, &file_info)) {
+                if (time(NULL) - file_info.st_mtime > timeout_sec) {
+                    if (!unlink(path)) {
+                        continue;
+                    }
+                }
+            }
         }
-        if (!attempts--) {
-            break;
+
+        // Try to open the until "timeout_sec" seconds have passed
+        clock_gettime(CLOCK_MONOTONIC, &clock_now);
+        if (((clock_now.tv_sec - clock_start.tv_sec) + (clock_now.tv_nsec -
+          clock_start.tv_nsec) / 1E9) > timeout_sec) {
+            return NULL;
         }
         usleep(delay);
     }
-    return NULL;
-}
-
-/* Cleanup function used by `atexit` to remove temporary files.
- */
-void cleanup()
-{
-    unlink(DATABASE_TEMP);
-}
-
-/* Wrapper for `cleanup` function to ensure program exits with a non-zero
- * status.
- */
-void sig_cleanup()
-{
-    cleanup();
-    exit(1);
 }
 
 /* Display brief help for program.
@@ -213,8 +217,10 @@ int main(int argc, char **argv)
 {
     FILE *userdb;
     FILE *userdbtmp;
-    char *envpassword;
-    char *envusername;
+    char envpassword[MAX_INPUT_CHARS + 1];
+    char envusername[MAX_INPUT_CHARS + 1];
+    char database_path[PATH_MAX];
+    char database_temp[PATH_MAX];
     char *hash;
     char *salt;
     char *username;
@@ -222,49 +228,23 @@ int main(int argc, char **argv)
     char line[MAX_LINE_SIZE];
     int action = ACTION_NOOP;
 
-    // Get path to database from OVPNAUTH_DATABASE. If the path cannot be
-    // pulled from the environment, the database path defaults to "users.db".
-    // The temporary database path is created prepending a "." and appending
-    // ".tmp" to the database path's basename, so the temporary file for
-    // "/etc/ovpn.shadow" would be "/etc/.ovpn.shadow.tmp".
-    DATABASE_PATH = getenv("OVPNAUTH_DATABASE");
-    if (DATABASE_PATH == NULL) {
-        DATABASE_PATH = "users.db";
-        DATABASE_TEMP = ".users.db.tmp";
-    } else {
-        DATABASE_TEMP = (char *) malloc(strlen(DATABASE_PATH) + 6);
-        if (DATABASE_TEMP == NULL) {
-            ERRNO_DIE("Could not allocate memory");
-        }
-
-        char *slash_ptr = strrchr(DATABASE_PATH, '/');
-        if (slash_ptr == NULL) {
-            DATABASE_TEMP[0] = '.';
-            DATABASE_TEMP[1] = '\0';
-            strcat(DATABASE_TEMP, DATABASE_PATH);
-        } else {
-            // Insert "." immediately after the slash.
-            strncpy(DATABASE_TEMP, DATABASE_PATH, slash_ptr - DATABASE_PATH + 1);
-            *(DATABASE_TEMP + (slash_ptr - DATABASE_PATH + 1)) = '.';
-            *(DATABASE_TEMP + (slash_ptr - DATABASE_PATH + 2)) = '\0';
-            strcat(DATABASE_TEMP, slash_ptr + 1);
-        }
-        strcat(DATABASE_TEMP, ".tmp");
+    strncpy(database_path, getenv("OVPNAUTH_DBPATH") ?: "auth.db\0", PATH_MAX);
+    database_path[PATH_MAX - 1] = '\0';
+    if ((strlen(database_path) + 5) > PATH_MAX) {
+        // strlen(strcat(database_bath, ".new")) > (PATH_MAX - 1)
+        fputs("Database path too long.\n", stderr);
+        return 1;
     }
 
-    userdb = fopen(DATABASE_PATH, "a+");
+    userdb = fopen(database_path, "a+");
     if (userdb == NULL) {
         ERRNO_DIE("Unable to open user database");
     }
 
-    envusername = getenv("username");
-    envpassword = getenv("password");
+    strncpy(envusername, getenv("username") ?: "\0", MAX_INPUT_CHARS);
+    strncpy(envpassword, getenv("password") ?: "\0", MAX_INPUT_CHARS);
 
-    if ((envusername != NULL) && (envpassword != NULL)) {
-        if (*envusername == '\0' || *envpassword == '\0') {
-            fputs("Neither the username nor password may be empty.\n", stderr);
-            return 1;
-        }
+    if (*envusername && *envpassword) {
         action = ACTION_AUTHENTICATE;
     } else if (argc - 1) {
         if (!strcmp(argv[1], "edit")) {
@@ -287,55 +267,35 @@ int main(int argc, char **argv)
         return 1;
     }
 
-    if (action & ACTION_LOCKS_DATABASE) {
-        char *envattempts = getenv("OVPNAUTH_LOCK_ATTEMPTS");
-        int attempts = 0;
-        if (envattempts != NULL) {
-            attempts = atoi(envattempts);
-        }
-
-        if (!attempts || envattempts == NULL) {
-            attempts = 12;
-        }
-
-        if ((userdbtmp = excl_open(DATABASE_TEMP, "w", attempts)) == NULL) {
-            ERRNO_DIE("Unable to lock database");
-        }
-
-        // Make sure the lock file is removed when the process terminates
-        signal(SIGTERM, sig_cleanup);
-        signal(SIGINT, sig_cleanup);
-        atexit(cleanup);
-    }
-
     if (action & (ACTION_EDIT | ACTION_REMOVE)) {
-        char read_buffer[128];
         if (argc > 2) {
-            envusername = argv[2];
+            strncpy(envusername, argv[2], MAX_INPUT_CHARS);
         } else {
             printf("Username: ");
-            scanf("%127s", read_buffer);
-            envusername = (char *) malloc(strlen(read_buffer) + 1);
-            if (envusername == NULL) {
-                ERRNO_DIE("Could not allocate memory");
-            }
-            strcpy(envusername, read_buffer);
+            READ_INTO(envusername, MAX_INPUT_CHARS);
         }
 
         if (action == ACTION_EDIT) {
             if (isatty(0) && isatty(1)) {
                 printf("Password: ");
             }
-            scanf("%127s", read_buffer);
-            envpassword = (char *) malloc(strlen(read_buffer) + 1);
-            if (envpassword == NULL) {
-                ERRNO_DIE("Could not allocate memory");
-            }
-            strcpy(envpassword, read_buffer);
+            READ_INTO(envpassword, MAX_INPUT_CHARS);
             if (saltedhash(envpassword, NULL, hash_with_salt)) {
                 fputs("Unable to initialize OpenSSL SHA methods.\n", stderr);
                 return 1;
             }
+        }
+    }
+
+    if (action & ACTION_LOCKS_DATABASE) {
+        int lock_timeout = atoi(getenv("OVPNAUTH_LOCK_TIMEOUT") ?: "2\0");
+
+        strcpy(database_temp, database_path);
+        strcat(database_temp, ".new");
+
+        userdbtmp = excl_open(database_temp, "w", lock_timeout);
+        if (userdbtmp == NULL) {
+            ERRNO_DIE("Unable to lock database");
         }
     }
 
@@ -416,6 +376,7 @@ int main(int argc, char **argv)
             printf("Created new user '%s'.\n", envusername);
         } else {
             printf("Could not find user '%s'.\n", envusername);
+            fclose(userdbtmp);
             return 1;
         }
     } else {
@@ -429,7 +390,7 @@ int main(int argc, char **argv)
     fclose(userdbtmp);
 
     // Atomically replace the existing database with the new database.
-    if (rename(DATABASE_TEMP, DATABASE_PATH)) {
+    if (rename(database_temp, database_path)) {
         ERRNO_DIE("Could not save changes");
     }
 

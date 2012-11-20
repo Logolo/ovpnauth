@@ -2,10 +2,10 @@ ovpnauth
 ========
 I run openvpn in a chrooted environment on one of my servers, and I wanted to
 use a password-based authentication system instead of issuing unique
-certificates for each clients. Prior to chrooting my openvpn setup, I used a
+certificates for each client. Prior to chrooting my openvpn setup, I used a
 Python script that worked with `auth-user-pass-verify` and `via-env`. However,
 I wanted a more light-weight approach for my chrooted setup that did not
-require me to add large amounts of files to the chroot, so I wrote openvpn, a
+require me to add large numbers of files to the chroot, so I wrote ovpnauth, a
 small, statically linked application that works with `auth-user-pass-verify`
 inside or outside of a chrooted environment.
 
@@ -41,16 +41,16 @@ Installation
 ------------
 Copy the `ovpnauth` binary to a folder accessible by your openvpn user. When
 running openvpn in a chrooted environment, `ovpnauth` must be placed inside the
-chroot folder or a subdirectory inside th chroot folder.
+chroot folder or a subdirectory thereof.
 
 Edit openvpn's server config file and adjust `auth-user-pass-verify` to the
 following:
 
     auth-user-pass-verify $OVPNAUTH_PATH via-env
 
-Replace `$OVPNAUTH_PATH` with the path the `ovpnauth` binary. If you're using
-the chroot directive for openvpn, make sure to adjust the path treating the
-chroot directory as the file system root. For example, if your server
+Replace `$OVPNAUTH_PATH` with the path to the `ovpnauth` binary. If you're
+using the chroot directive for openvpn, make sure to adjust the path treating
+the chroot directory as the file system root. For example, if your server
 configuration contains `chroot /home/openvpn` and you copied the binary to
 `/home/openvpn/bin`, then `OVPNAUTH_PATH=/bin/ovpnauth` in the line above.
 
@@ -84,16 +84,17 @@ users.
     bob
     paul
 
-By default, the file `users.db` in the current working directory is used to
+By default, the file `auth.db` in the current working directory is used to
 store the user authentication data, but the file can be changed by setting the
-`OVPNAUTH_DATABASE` environment variable to the preferred path.
+`OVPNAUTH_DBPATH` environment variable to the preferred path.
 
 Locking is implemented for operations that require the authentication database
-to be updated. If an existing lock is detected, the application waits 125
-milliseconds before attempting to acquire write-lock again. If no lock is
-acquired after 12 attempts, the application gives up and dies. The number of
-attempts made to acquire a lock can be defined with the environment variable
-`OVPNAUTH_LOCK_ATTEMPTS`.
+to be updated. If an existing lock is detected, the application will wait up to
+2 seconds for the lock to be freed before giving up. The duration can be
+changed by setting the environment variable `OVPNAUTH_LOCK_TIMEOUT` to a whole
+number representing the lock timoeout in seconds. Any existing lock files that
+are older than the timeout will be unlinked under the assumption the previous
+application instance was interrupted before its changes were committed.
 
 Bugs / Known Issues
 --------------------
@@ -105,3 +106,6 @@ Bugs / Known Issues
   version used for linking`. It does not appear that any of the code `ovpnauth`
   depends on calls `dlopen`, so I redeclared `dlopen` as a void function in my
   application.
+
+- This could be made simpler by just acting as a relay to daemon listening on
+  loopback, but I learned more this way `;)`.
