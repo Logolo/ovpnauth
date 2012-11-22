@@ -82,18 +82,29 @@ int saltedhash(char *string, char *salt, char output[SALTED_HASH_LENGTH + 1])
 
     salt_[MAX_SALT_CHARS] = '\0';
     if (salt == NULL) {
-        // When no salt is given, grab data from /dev/urandom, convert it to
-        // hexadecimal and use the result as our salt.
+        // When no salt is given, generate salt randomly with /dev/urandom or
+        // srand as a fallback.
         urandom = fopen("/dev/urandom", "r");
-        if (urandom == NULL) {
-            ERRNO_DIE("Could not open /dev/urandom");
-        }
+        if (urandom != NULL) {
+            for(int i = 0; i < MAX_SALT_CHARS; ++i) {
+                *(salt_ + i) = fgetc(urandom) % 63 + 64;
+            }
+            fclose(urandom);
 
-        for(int i = 0; i < MAX_SALT_CHARS / 2; ++i) {
-            sprintf(salt_ + i * 2, "%02x", fgetc(urandom));
+        } else {
+            // When dev urandom cannot be loaded, hash some environment
+            // variables to seed srand for salt generation.
+            snprintf(hash, DIGEST_LENGTH * 2, "%i.%i.%i", (int) time(NULL),
+                (int) getpid(), (int) clock());
+            sha512(hash, hash);
+            hash[sizeof((long int)(0)) * 2 - 1] = '\0';
+            srand(strtol(hash, NULL, 16));
+
+            for(int i = 0; i < MAX_SALT_CHARS; ++i) {
+                *(salt_ + i) = rand() % 63 + 64;
+            }
         }
         salt_length = MAX_SALT_CHARS;
-        fclose(urandom);
     } else {
         strncpy(salt_, salt, MAX_SALT_CHARS);
         salt_length = strlen(salt_);
@@ -159,7 +170,7 @@ FILE *excl_open(char *path, char *mode, int timeout_sec)
             }
         }
 
-        // Try to open the until "timeout_sec" seconds have passed
+        // Try to open the file until "timeout_sec" seconds have passed
         clock_gettime(CLOCK_MONOTONIC, &clock_now);
         if (((clock_now.tv_sec - clock_start.tv_sec) + (clock_now.tv_nsec -
           clock_start.tv_nsec) / 1E9) > timeout_sec) {
