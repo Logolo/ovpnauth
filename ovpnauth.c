@@ -40,7 +40,7 @@ void dlopen() { /* eliminates a compiler warning on RHEL-based systems. */ };
  */
 int sha512(char *string, char output[DIGEST_LENGTH * 2 + 1])
 {
-    unsigned char hash[SHA512_DIGEST_LENGTH] = "\0";
+    unsigned char hash[SHA512_DIGEST_LENGTH] = "";
     SHA512_CTX sha;
     if (!(SHA512_Init(&sha) && SHA512_Update(&sha, string, strlen(string)) &&
       SHA512_Final(hash, &sha))) {
@@ -76,7 +76,7 @@ int saltedhash(char *string, char *salt, char output[SALTED_HASH_LENGTH + 1])
     FILE *urandom;
     char *salted_string;
     char hash[DIGEST_LENGTH * 2 + 1];
-    char salt_[MAX_SALT_CHARS + 1] = "\0";
+    char salt_[MAX_SALT_CHARS + 1] = "";
     size_t salt_length;
     size_t string_length = strlen(string);
 
@@ -239,7 +239,7 @@ int main(int argc, char **argv)
     char line[MAX_LINE_SIZE];
     int action = ACTION_NOOP;
 
-    strncpy(database_path, getenv("OVPNAUTH_DBPATH") ?: "auth.db\0", PATH_MAX);
+    strncpy(database_path, getenv("OVPNAUTH_DBPATH") ?: "auth.db", PATH_MAX);
     database_path[PATH_MAX - 1] = '\0';
     if ((strlen(database_path) + 5) > PATH_MAX) {
         // strlen(strcat(database_bath, ".new")) > (PATH_MAX - 1)
@@ -252,8 +252,8 @@ int main(int argc, char **argv)
         ERRNO_DIE("Unable to open user database");
     }
 
-    strncpy(envusername, getenv("username") ?: "\0", MAX_INPUT_CHARS);
-    strncpy(envpassword, getenv("password") ?: "\0", MAX_INPUT_CHARS);
+    strncpy(envusername, getenv("username") ?: "", MAX_INPUT_CHARS);
+    strncpy(envpassword, getenv("password") ?: "", MAX_INPUT_CHARS);
 
     if (*envusername && *envpassword) {
         action = ACTION_AUTHENTICATE;
@@ -299,7 +299,7 @@ int main(int argc, char **argv)
     }
 
     if (action & ACTION_LOCKS_DATABASE) {
-        int lock_timeout = atoi(getenv("OVPNAUTH_LOCK_TIMEOUT") ?: "2\0");
+        int lock_timeout = atoi(getenv("OVPNAUTH_LOCK_TIMEOUT") ?: "2");
 
         strcpy(database_temp, database_path);
         strcat(database_temp, ".new");
