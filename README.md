@@ -12,9 +12,9 @@ inside or outside of a chrooted environment.
 Compiling
 ---------
 To compile ovpnauth, you will need the libc, zlib and openssl development
-headers. I have only personally compiled and tested the application on CentOS 6
-and Debian Squeeze, and I have been able to install the needed libraries with
-the following commands:
+headers. I have only personally compiled and tested the application on CentOS
+6, Debian Squeeze and Wheezy, and I have been able to install the needed
+libraries with the following commands:
 
 ### CentOS 6: ###
 
@@ -27,6 +27,22 @@ the following commands:
 ### Debian Squeeze: ###
 
     apt-get --no-install-recommends install gcc make libc-dev libssl-dev
+
+### Gentoo ###
+
+The application application reportedly compiles and passes the test suite on
+Gentoo, and the following (paraphrased) instructions for compiling ovpnauth
+were relayed to me by [dririan](https://github.com/dririan/):
+
+> Most boxes should actually have what is needed. For static linking,
+> USE="static" needs to be turned on for the packages, so add the following
+> lines to "/etc/portage/package.use" then recompile both packages with "emerge
+> -1 openssl zlib":
+
+    dev-libs/openssl static-libs
+    sys-libs/zlib static-libs
+
+### Making The Binary ###
 
 Once the development headers, compiler and `make` are installed, you should be
 able to compile the application by running `make`. By default, a statically
