@@ -15,7 +15,7 @@ endif
 
 all: $(TARGET) tests
 
-$(TARGET):
+$(TARGET): $(SOURCES)
 	$(CC) $(SOURCES) $(FLAGS) -o $(TARGET)
 
 dynamic: $(TARGET)

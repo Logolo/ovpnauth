@@ -114,8 +114,6 @@ application instance was interrupted before its changes were committed.
 
 Bugs / Known Issues
 --------------------
-- All password prompts currently echo the input back to the terminal.
-
 - I am currently using a work-around for an error I encountered when compiling
   this program on my CentOS 6 server: `warning: Using 'dlopen' in statically
   linked applications requires at runtime the shared libraries from the glibc

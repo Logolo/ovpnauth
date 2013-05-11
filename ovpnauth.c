@@ -49,9 +49,8 @@ int sha512(char *string, char output[DIGEST_LENGTH * 2 + 1])
 
     // Convert binary digest to hexadecimal
     for(int i = 0; i < SHA512_DIGEST_LENGTH; i++) {
-        sprintf(output + i * 2, "%02x", hash[i]);
+        snprintf(output + i * 2, 3, "%02x", hash[i]);
     }
-    output[DIGEST_LENGTH * 2] = '\0';
     return 0;
 }
 
@@ -242,7 +241,7 @@ int main(int argc, char **argv)
     strncpy(database_path, getenv("OVPNAUTH_DBPATH") ?: "auth.db", PATH_MAX);
     database_path[PATH_MAX - 1] = '\0';
     if ((strlen(database_path) + 5) > PATH_MAX) {
-        // strlen(strcat(database_bath, ".new")) > (PATH_MAX - 1)
+        // strlen(strcat(database_path, ".new")) > (PATH_MAX - 1)
         fputs("Database path too long.\n", stderr);
         return 1;
     }
@@ -287,10 +286,17 @@ int main(int argc, char **argv)
         }
 
         if (action == ACTION_EDIT) {
-            if (isatty(0) && isatty(1)) {
+            if (isatty(STDIN_FILENO)) {
+                strncpy(envpassword, getpass("Password: "), MAX_INPUT_CHARS);
+                if (strcmp(getpass("Retype password: "), envpassword)) {
+                    puts("Passwords did not match.");
+                    return 1;
+                }
+            } else {
                 printf("Password: ");
+                READ_INTO(envpassword, MAX_INPUT_CHARS);
             }
-            READ_INTO(envpassword, MAX_INPUT_CHARS);
+
             if (saltedhash(envpassword, NULL, hash_with_salt)) {
                 fputs("Unable to initialize OpenSSL SHA methods.\n", stderr);
                 return 1;
