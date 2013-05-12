@@ -11,12 +11,15 @@ inside or outside of a chrooted environment.
 
 Compiling
 ---------
-To compile ovpnauth, you will need the libc, zlib and openssl development
-headers. I have only personally compiled and tested the application on CentOS
-6, Debian Squeeze and Wheezy, and I have been able to install the needed
-libraries with the following commands:
 
-### CentOS 6: ###
+### Build Dependencies ###
+
+To compile ovpnauth, you will need the libc, zlib and openssl development
+headers in addition to `make` and `gcc`. I have only personally compiled and
+tested the application on CentOS 6, Debian Squeeze and Wheezy, and I was able
+to install the build dependencies with the following commands:
+
+#### CentOS 6 ####
 
     # Static executable
     yum install gcc make glibc-static zlib-static openssl-static
@@ -24,15 +27,15 @@ libraries with the following commands:
     # Dynamically linked executable
     yum install make gcc openssl-devel
 
-### Debian Squeeze: ###
+#### Debian Squeeze ####
 
     apt-get --no-install-recommends install gcc make libc-dev libssl-dev
 
-### Gentoo ###
+#### Gentoo ####
 
-The application application reportedly compiles and passes the test suite on
-Gentoo, and the following (paraphrased) instructions for compiling ovpnauth
-were relayed to me by [dririan](https://github.com/dririan/):
+The application reportedly compiles and passes the test suite on Gentoo, and
+the following (paraphrased) instructions for compiling ovpnauth were relayed to
+me by [dririan](https://github.com/dririan/):
 
 > Most boxes should actually have what is needed. For static linking,
 > USE="static" needs to be turned on for the packages, so add the following
@@ -79,13 +82,15 @@ users.
 ### Add a new user ###
 
     [root@cloud ovpnauth]# ovpnauth edit jameseric
-    Password: hunter2
+    Password:
+    Retype password:
     Created new user 'jameseric'.
 
 ### Change user's password ###
 
     [root@cloud ovpnauth]# ovpnauth edit bob
-    Password: new-password
+    Password:
+    Retype password:
     Authentication data for 'bob' updated.
 
 ### Delete a user ###
@@ -99,6 +104,10 @@ users.
     jameseric
     bob
     paul
+
+Passwords can also be piped into stdin instead of being entered interactively.
+If a password is piped into stdin, ovpnauth will not require that the password
+be retyped.
 
 By default, the file `auth.db` in the current working directory is used to
 store the user authentication data, but the file can be changed by setting the

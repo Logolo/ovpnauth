@@ -25,18 +25,20 @@
 #define MAX_SALT_CHARS 32
 #define QW(str) #str
 #define READ_INTO(destination, chars) scanf("%" QW(chars) "s", destination);
+
+// Length of the digest and salt joined with a colon.
 #define SALTED_HASH_LENGTH (DIGEST_LENGTH * 2 + MAX_SALT_CHARS + 1)
 
 void dlopen() { /* eliminates a compiler warning on RHEL-based systems. */ };
 
-/*  Compute hexadecimal SHA digest of given string.
+/* Compute hexadecimal SHA digest of given string.
  *
- *  @param string   String from which to generate digest.
- *  @param output   Output buffer for hexadecimal digest. Must be of size
+ * @param string    String from which to generate digest.
+ * @param output    Output buffer for hexadecimal digest. Must be of size
  *                  (DIGEST_LENGTH * 2 + 1)
  *
- *  @retval 0       Returned upon successful execution
- *  @retval 1       Returned when OpenSSL methods cannot be initialized
+ * @retval 0        Returned upon successful execution
+ * @retval 1        Returned when OpenSSL methods cannot be initialized
  */
 int sha512(char *string, char output[DIGEST_LENGTH * 2 + 1])
 {
@@ -54,21 +56,21 @@ int sha512(char *string, char output[DIGEST_LENGTH * 2 + 1])
     return 0;
 }
 
-/*  Concatenate a string with a given salt and generate an SHA digest of
- *  the concatenated string. If a NULL pointer is passed in for the salt, a
- *  random salt will be generated. If a salt is provided and exceed
- *  MAX_SALT_CHARS, it will be truncated.
+/* Concatenate a string with a given salt and generate an SHA digest of the
+ * concatenated string. If a NULL pointer is passed in for the salt, a random
+ * salt will be generated. If a salt is provided and exceed MAX_SALT_CHARS, it
+ * will be truncated.
  *
- *  @param string   String from which to generate salted hash
- *  @param salt     Salt used for hash generation. Passing this argument in
+ * @param string    String from which to generate salted hash
+ * @param salt      Salt used for hash generation. Passing this argument in
  *                  as a NULL pointer will cause a random salt to be
  *                  generated.
- *  @param output   Output buffer for digest. This will contain the hash
+ * @param output    Output buffer for digest. This will contain the hash
  *                  and salt used for the hash joined with a ':'. The
  *                  buffer must be of size (DIGEST_LENGTH * 2 +
  *                  MAX_SALT_CHARS + 1)
  *
- *  @returns        Returns the result of the `sha512` function
+ * @returns         Returns the result of the `sha512` function
  */
 int saltedhash(char *string, char *salt, char output[SALTED_HASH_LENGTH + 1])
 {
@@ -114,7 +116,7 @@ int saltedhash(char *string, char *salt, char output[SALTED_HASH_LENGTH + 1])
         ERRNO_DIE("Could not allocate memory");
     }
 
-    // hash = SHAChecksum("$string$salt_")
+    // hash = SHAChecksum(string + salt_)
     strcpy(salted_string, string);
     strcat(salted_string, salt_);
     if (sha512(salted_string, hash)) {
@@ -122,7 +124,7 @@ int saltedhash(char *string, char *salt, char output[SALTED_HASH_LENGTH + 1])
         return 1;
     }
 
-    // output = "$hash:$salt_"
+    // output = hash + ":" + salt_
     strcpy(output, hash);
     output[DIGEST_LENGTH * 2] = ':';
     output[DIGEST_LENGTH * 2 + 1] = '\0';
