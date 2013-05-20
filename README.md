@@ -109,6 +109,10 @@ Passwords can also be piped into stdin instead of being entered interactively.
 If a password is piped into stdin, ovpnauth will not require that the password
 be retyped.
 
+When using the `edit` option, empty passwords will be rejected by ovpnauth
+unless the environment variable `OVPNAUTH_ALLOW_NOPASS` is defined. The value
+of the environment is ignored and can be left empty.
+
 By default, the file `auth.db` in the current working directory is used to
 store the user authentication data, but the file can be changed by setting the
 `OVPNAUTH_DBPATH` environment variable to the preferred path.
@@ -117,7 +121,7 @@ Locking is implemented for operations that require the authentication database
 to be updated. If an existing lock is detected, the application will wait up to
 2 seconds for the lock to be freed before giving up. The duration can be
 changed by setting the environment variable `OVPNAUTH_LOCK_TIMEOUT` to a whole
-number representing the lock timoeout in seconds. Any existing lock files that
+number representing the lock timeout in seconds. Any existing lock files that
 are older than the timeout will be unlinked under the assumption the previous
 application instance was interrupted before its changes were committed.
 

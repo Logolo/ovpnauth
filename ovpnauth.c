@@ -290,7 +290,8 @@ int main(int argc, char **argv)
         if (action == ACTION_EDIT) {
             if (isatty(STDIN_FILENO)) {
                 strncpy(envpassword, getpass("Password: "), MAX_INPUT_CHARS);
-                if (strcmp(getpass("Retype password: "), envpassword)) {
+                if ((strlen(envpassword) || getenv("OVPNAUTH_ALLOW_NOPASS")) &&
+                  strcmp(getpass("Retype password: "), envpassword)) {
                     puts("Passwords did not match.");
                     return 1;
                 }
@@ -299,7 +300,10 @@ int main(int argc, char **argv)
                 READ_INTO(envpassword, MAX_INPUT_CHARS);
             }
 
-            if (saltedhash(envpassword, NULL, hash_with_salt)) {
+            if (!strlen(envpassword) && !getenv("OVPNAUTH_ALLOW_NOPASS")) {
+                puts("Empty passwords are not permitted.");
+                return 1;
+            } else if (saltedhash(envpassword, NULL, hash_with_salt)) {
                 fputs("Unable to initialize OpenSSL SHA methods.\n", stderr);
                 return 1;
             }

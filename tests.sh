@@ -135,6 +135,13 @@ do
     done
 done
 
+echo "Testing prohibition of empty passwords..."
+target edit user9 <<< '' &> /dev/null && die "Empty password was allowed."
+
+echo "Testing permission of empty passwords..."
+OVPNAUTH_ALLOW_NOPASS="" \
+    target edit user9 <<< '' &> /dev/null || die "Empty password was rejected."
+
 echo "Testing locking..."
 touch -t 197002010000 "$testdir/$db.new"
 target edit user99 <<< 'xxx' &> /dev/null || die "Failed to remove stale lock"
